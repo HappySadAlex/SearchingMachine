@@ -1,12 +1,9 @@
 package searchengine.services.indexing;
 
-import lombok.RequiredArgsConstructor;
 import org.jsoup.Connection;
 import org.jsoup.nodes.Document;
-import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.JsoupSession;
 import searchengine.config.Site;
@@ -25,49 +22,58 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
+
 public class IndexingServiceImpl implements IndexingService{
 
     private static final Logger log = LoggerFactory.getLogger(IndexingServiceImpl.class);
-    @Autowired
+
     private final SiteRepository siteRepo;
-    @Autowired
+
     private final PageRepository pageRepo;
-    @Autowired
+
     private final IndexRepository indexRepo;
-    @Autowired
+
     private final LemmaRepository lemmaRepo;
-    @Autowired
+
     private final SitesList sites;
-    @Autowired
+
     private final JsoupSession connectionFab;
-    @Autowired
+
     private final LemmaFinder lemmaFinder;
 
-    public static volatile boolean isIndexing = false;
+    public static AtomicBoolean isIndexing = new AtomicBoolean(false);
 
     static final String[] errors = {
             "Данная страница находится за пределами сайтов, указанных в конфигурационном файле",
             "Индексация уже запущена",
             "Индексация не запущена"};
 
-    private volatile Map<String, Boolean> statusOfIndexing = new HashMap<>();
-
+    private final Map<String, Boolean> statusOfIndexing = new ConcurrentHashMap<>();
     private static final ForkJoinPool forkJoinPool = new ForkJoinPool(24);
-    private static final ExecutorService mainExecutor = Executors.newFixedThreadPool(6);
+    public static final ExecutorService mainExecutor = Executors.newFixedThreadPool(6);
+
+    public IndexingServiceImpl(SiteRepository siteRepo, PageRepository pageRepo, IndexRepository indexRepo, LemmaRepository lemmaRepo, SitesList sites, JsoupSession connectionFab, LemmaFinder lemmaFinder) {
+        this.siteRepo = siteRepo;
+        this.pageRepo = pageRepo;
+        this.indexRepo = indexRepo;
+        this.lemmaRepo = lemmaRepo;
+        this.sites = sites;
+        this.connectionFab = connectionFab;
+        this.lemmaFinder = lemmaFinder;
+    }
 
     @Override
     public IndexingResponse startIndexing() {
-        if(isIndexing){
+        if(isIndexing.get()){
             return IndexingResponse.builder().result(false).error(errors[1]).build();
         }
         deleteAllSitesData();
         log.info("Starting indexing sites");
-        isIndexing = true;
-
+        isIndexing.set(true);
         updateSitesInfo();
         for (Site site : sites.getSites()) {
             mainExecutor.execute(() -> {
@@ -84,7 +90,9 @@ public class IndexingServiceImpl implements IndexingService{
                     Set<String> set = ConcurrentHashMap.newKeySet();
                     IndexingTask task = new IndexingTask(pageRepo, indexRepo, lemmaRepo, new Page(url), set, url, siteRepo.findSiteByUrl(url), connectionFab, lemmaFinder);
                     forkJoinPool.invoke(task);
-                }catch (Exception ignore){}
+                } catch (Exception exception){
+                    log.error("Error in IndexingService - startIndexing method: {}", exception.getMessage());
+                }
                 //saveSetPages(result);
                 log.info("Pages from {} saved in DB", url);
                 statusOfIndexing.put(url, false);
@@ -96,17 +104,19 @@ public class IndexingServiceImpl implements IndexingService{
 
     @Override
     public IndexingResponse stopIndexing() {
-        if(!isIndexing){
+        if(!isIndexing.get()){
             return IndexingResponse.builder().result(false).error(errors[2]).build();
         }
-        isIndexing = false;
+        isIndexing.set(false);
         try {
             forkJoinPool.shutdownNow();
             IndexingTask.executor.shutdown();
             if(IndexingTask.executor.awaitTermination(10000, TimeUnit.MILLISECONDS)){
                 IndexingTask.executor.shutdownNow();
             }
-        } catch (Exception ignore){ }
+        } catch (Exception exception){
+            log.error("Error in IndexingService - stopIndexing method: {}", exception.getMessage());
+        }
         for (Site site : sites.getSites()) {
             String url = site.getUrl();
             siteRepo.updateIndexingTimeByUrl(LocalDateTime.now(), url);
@@ -159,28 +169,20 @@ public class IndexingServiceImpl implements IndexingService{
 
     private void updateSitesInfo(){
         mainExecutor.execute(()->{
-            while(isIndexing){
+            while(isIndexing.get()){
                 try {
-                    Thread.sleep(5000);
+                    Thread.sleep(10000);
                     updateAllSitesStatuses(SiteModel.StatusType.INDEXING);
                 } catch (InterruptedException e) {
                     updateAllSitesStatuses(SiteModel.StatusType.FAILED);
                     log.info(e.getMessage());
                 }
                 if(!statusOfIndexing.containsValue(true)){
-                    isIndexing = false;
+                    isIndexing.set(false);
                     updateAllSitesStatuses(SiteModel.StatusType.INDEXED);
                     log.info("Circle while is done!");
                     break;
                 }
-            }
-            while (!IndexingTask.executor.isShutdown()){
-                if(IndexingTask.executor.isShutdown()) {
-                    log.info("Executor in Task stopped working? {}", IndexingTask.executor.isShutdown());
-                }
-            }
-            if(IndexingTask.executor.isShutdown()) {
-                log.info("Executor in Task stopped working? {}", IndexingTask.executor.isShutdown());
             }
             Thread.currentThread().interrupt();
         });

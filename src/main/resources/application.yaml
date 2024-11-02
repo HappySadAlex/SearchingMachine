@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+#DataBase config
+spring:
+  datasource:
+    username: root
+    password: rootpassword
+    url: jdbc:mysql://db:3307/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+    charset: utf8mb4
+    hikari:
+          maximum-pool-size: 100 #maximum pool size
+          connection-timeout: 40000
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+      show-sql: true
+      format_sql: true
+      highlight_sql: true
+
+user-agent: Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6
+refer: http://www.google.com
+
+indexing-settings:
+  sites:
+    - url: https://sendel.ru/
+      name: Sendel.ru
+    #- url: https://ipfran.ru/
+    #  name: ipfran
+    #- url: http://www.playback.ru/
+    #  name: PlayBack.Ru
+    #- url: https://cph-sochi.com
+    #  name: Hotel
+    #- url: https://www.skillbox.ru
+    #  name: Skillbox
+
+
+#logging:
+  level.org.springframework.web: DEBUG
+  level.org.hibernate: DEBUG

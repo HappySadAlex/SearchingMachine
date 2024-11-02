@@ -28,20 +28,27 @@ import java.util.stream.Collectors;
 
 
 @Service
-@RequiredArgsConstructor
+
 public class SearchingServiceImpl implements SearchingService{
     private static final Logger log = LoggerFactory.getLogger(SearchingServiceImpl.class);
-    @Autowired
+
     private final LemmaRepository lemmaRepository;
-    @Autowired
+
     private final PageRepository pageRepository;
-    @Autowired
+
     private final SiteRepository siteRepository;
-    @Autowired
+
     private final IndexRepository indexRepository;
-    @Autowired
+
     private final LemmaFinder lemmatizator;
 
+    public SearchingServiceImpl(LemmaRepository lemmaRepository, PageRepository pageRepository, SiteRepository siteRepository, IndexRepository indexRepository, LemmaFinder lemmatizator) {
+        this.lemmaRepository = lemmaRepository;
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
+        this.indexRepository = indexRepository;
+        this.lemmatizator = lemmatizator;
+    }
 
     @Override
     public SearchingResponse search(String query, String siteUrl, Integer offset, Integer limit) {

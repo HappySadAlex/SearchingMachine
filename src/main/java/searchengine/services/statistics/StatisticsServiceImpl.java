@@ -20,18 +20,25 @@ import java.util.List;
 import java.util.Random;
 
 @Service
-@RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
 
     private final SitesList sites;
-    @Autowired
+
     private final SiteRepository siteRepo;
-    @Autowired
+
     private final PageRepository pageRepo;
-    @Autowired
+
     private final IndexRepository indexRepo;
-    @Autowired
+
     private final LemmaRepository lemmaRepo;
+
+    public StatisticsServiceImpl(SitesList sites, SiteRepository siteRepo, PageRepository pageRepo, IndexRepository indexRepo, LemmaRepository lemmaRepo) {
+        this.sites = sites;
+        this.siteRepo = siteRepo;
+        this.pageRepo = pageRepo;
+        this.indexRepo = indexRepo;
+        this.lemmaRepo = lemmaRepo;
+    }
 
     @Override
     public StatisticsResponse getStatistics() {

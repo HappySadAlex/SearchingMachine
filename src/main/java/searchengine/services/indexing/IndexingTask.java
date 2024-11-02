@@ -4,10 +4,8 @@ import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RecursiveTask;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -15,11 +13,9 @@ import org.jsoup.Connection;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.JsoupSession;
 import searchengine.features.LemmaFinder;
 import searchengine.model.IndexModel;
-import searchengine.model.LemmaModel;
 import searchengine.model.PageModel;
 import searchengine.model.SiteModel;
 import searchengine.repositories.IndexRepository;
@@ -34,7 +30,7 @@ public class IndexingTask extends RecursiveTask<Set<PageModel>> {
     private static JsoupSession connector;
     private static PageRepository pageRepository;
     private static LemmaFinder lematizator;
-    public volatile static boolean isIndexing = IndexingServiceImpl.isIndexing;
+    public static AtomicBoolean isIndexing = IndexingServiceImpl.isIndexing;
     private final String domain; //Main page
     private final SiteModel model;
     public final static ExecutorService executor = Executors.newFixedThreadPool(20);
@@ -86,14 +82,14 @@ public class IndexingTask extends RecursiveTask<Set<PageModel>> {
     @SneakyThrows
     @Override
     protected Set<PageModel> compute() {
-        if(isIndexing) {
+        if(isIndexing.get()) {
             //result.append(page.getUrl());
             Set<IndexingTask> taskListForPage = ConcurrentHashMap.newKeySet();
             visited.add(page.getUrl());
             // заполнение массива подзадач
             for (Page child : getPagesOnPage(page)) {
                 //log.info("Child: {}", child.getUrl());
-                if ((!child.isVisited() || !visited.contains(child.getUrl())) && isIndexing) {
+                if ((!child.isVisited() || !visited.contains(child.getUrl())) && isIndexing.get()) {
                     IndexingTask subTask = new IndexingTask(domain, model, child, visited);
                     visited.add(child.getUrl());
                     subTask.fork();
@@ -104,7 +100,7 @@ public class IndexingTask extends RecursiveTask<Set<PageModel>> {
             if (!taskListForPage.isEmpty()) {
                 for (Page p : page.getChildPages()) {
                     for (IndexingTask m : taskListForPage) {
-                        if (p.getUrl().equals(m.page.getUrl()) && isIndexing) {
+                        if (p.getUrl().equals(m.page.getUrl()) && isIndexing.get()) {
                             try {
                                 Thread.sleep(150);
                                 m.join();
@@ -125,7 +121,7 @@ public class IndexingTask extends RecursiveTask<Set<PageModel>> {
                 .execute();
         Document doc = response.parse();
         Elements elements = doc.select("a");
-        if (!isIndexing) executor.shutdownNow();
+        if (!isIndexing.get()) executor.shutdownNow();
         PageModel pageModel = PageModel.builder()
                 .path(page.getUrl().replace(domain, ""))
                 .content(doc.toString())
@@ -137,7 +133,6 @@ public class IndexingTask extends RecursiveTask<Set<PageModel>> {
         return elements;
     }
 
-    @Transactional
     public static void saveLemmas(Document doc, SiteModel model, PageModel pageModel){
         executor.execute(()->{
             Map<String, Integer> lemmas = lematizator.deleteTagsAndCollect(doc.toString());
